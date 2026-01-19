@@ -4,17 +4,34 @@ DaVinci Resolve の字幕データを Text+ クリップに変換し、ビデオ
 
 ## 機能
 
-- **クリップ変換**: 字幕クリップを1つずつ Text+ クリップに変換します。
-- **タイミングの維持**: 字幕の開始時刻と長さを正確に反映します。
-- **マーカーによる指定**: マーカー名を使用して、対象トラックと使用するテンプレートを指定可能です。
-- **再配置機能**: 配置済みの Text+ を削除してから再配置するため、修正後のやり直しが容易です。
+### クリップ変換  
+
+字幕クリップを1つずつ Text+ クリップに変換します。
+
+### タイミングの維持
+
+字幕の開始時刻と長さを正確に反映します。
+
+### マーカーによる指定  
+
+マーカー名を使用して、対象トラックと使用するテンプレートを指定可能です。
+
+### 再配置機能  
+
+配置済みの Text+ を削除してから再配置するため、修正後のやり直しが容易です。
 
 ## インストール
 
 `subtitle-to-text-plus.lua` を以下のディレクトリに配置してください。
 
-- **Windows**: `%AppData%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Comp`
-- **macOS**: `/Users/[ユーザー名]/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Comp`
+- **Windows**:
+  ```text
+  %AppData%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Comp
+  ```
+- **macOS**:
+  ```text
+  /Users/[ユーザー名]/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Comp
+  ```
 
 配置後、メニューの [Workspace] -> [Scripts] -> [Comp] から実行可能になります。
 
