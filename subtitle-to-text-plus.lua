@@ -115,21 +115,47 @@ function SubtitleProcessor.updateTextPlus(timelineItem, text)
     local comp = timelineItem:GetFusionCompByIndex(1)
     if not comp then return false end
     
+    -- 1. Fast Search: Prioritize finding a tool named "Template"
     local tool = comp:FindTool("Template")
+    local targetInput = "StyledText" -- default
+    
+    -- 2. Fallback: Scan tools only if Template is not found
     if not tool then
-        -- Fallback search logic
         for _, t in pairs(comp:GetToolList()) do
-            local attrs = t:GetAttrs()
-            if attrs.TOOLS_Name == "Template" or attrs.TOOLB_Name == "TextPlus" then
-                tool = t
-                break
+            local input = t:GetInput("StyledText")
+            if not input then
+                input = t:GetInput("Text")
+                if input then targetInput = "Text" end
+            else
+                targetInput = "StyledText"
             end
+            
+            if input then
+                -- Minimal safety check for visibility
+                local isVisible = true
+                if type(input) == "userdata" and input.GetAttrs then
+                    local ok, attrs = pcall(input.GetAttrs, input)
+                    if ok and attrs and attrs.INPB_Visible == false then
+                        isVisible = false
+                    end
+                end
+                if isVisible then
+                    tool = t
+                    break
+                end
+            end
+        end
+    else
+        -- If Template was found, decide between StyledText or Text
+        if not tool:GetInput("StyledText") and tool:GetInput("Text") then
+            targetInput = "Text"
         end
     end
     
     if tool then
-        tool:SetInput("StyledText", text)
-        return true
+        -- Safe set input
+        local ok = pcall(tool.SetInput, tool, targetInput, text)
+        return ok
     end
     return false
 end
