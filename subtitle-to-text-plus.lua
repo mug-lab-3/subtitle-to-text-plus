@@ -1,8 +1,21 @@
 --[[
     Subtitle to Text+ Professional Edition
     
-    DaVinci Resolve script to convert subtitles to Text+ clips.
-    Focuses on maintainability and modular structure.
+    A DaVinci Resolve script to convert subtitles to individual Text+ clips
+    with automatic timing synchronization and overwrite support.
+
+    [ USAGE ]
+    1. Prepare your timeline with "::" prefixed tracks.
+       E.g., A video track named "::Main" and a subtitle track named "::Main".
+    2. Add markers on the video track to specify where to transform.
+       The marker name must follow the format: "::[TrackName]-[TemplateName]"
+       E.g., "::Main-MyStyle" (This will use 'MyStyle' from Media Pool for '::Main' track).
+    3. Ensure the Template (Text+ clip) exists in your Media Pool with the specified name.
+    4. Run the script. It will automatically:
+       - Find subtitles within each marker's range.
+       - Delete any existing clips in that range on the target video track (Overwrite).
+       - Insert a new Text+ clip for each subtitle with perfect timing.
+       - Update the Text+ content with the subtitle text.
 ]]
 
 -- ==========================================
