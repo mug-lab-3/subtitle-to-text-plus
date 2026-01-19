@@ -5,7 +5,7 @@
 -- Configuration
 -- ==========================================
 
-local PREFIX = "@@@-"
+local PREFIX = "::"
 local PREFIX_LEN = #PREFIX
 local DEBUG_MODE = false -- 詳細ログを表示するかどうか
 
@@ -120,6 +120,24 @@ local function getSubtitlesInRange(timeline, subtitleTrackIndex, startTimeRel, e
     return subtitleList
 end
 
+-- タイムライン上の特定の範囲にあるクリップを削除する
+local function deleteClipsInRange(timeline, trackType, trackIndex, startTimeAbs, endTimeAbs)
+    local items = timeline:GetItemListInTrack(trackType, trackIndex)
+    if not items then return end
+    
+    for _, item in ipairs(items) do
+        local start = item:GetStart()
+        local duration = item:GetDuration()
+        local itemEnd = start + duration
+        
+        -- 重なり（Overlap）の判定
+        if start < endTimeAbs and itemEnd > startTimeAbs then
+            logDebug("  [Delete] 既存クリップを削除します: " .. item:GetName() .. " (Range: " .. start .. " - " .. itemEnd .. ")")
+            timeline:DeleteClips({item})
+        end
+    end
+end
+
 -- ==========================================
 -- Core Logic Functions
 -- ==========================================
@@ -129,22 +147,50 @@ local function processMarker(projectContext, markerData)
     local timeline = projectContext.timeline
     local mediaPool = projectContext.mediaPool
     local rootFolder = projectContext.rootFolder
+    local timelineStart = timeline:GetStartFrame()
     
-    local clipName = markerData.name:sub(PREFIX_LEN + 1)
-    print("  Marker処理開始: " .. markerData.name .. " -> Template: " .. clipName)
+    -- 1. マーカー名の解析 (形式: ::Track-Template)
+    local nameBody = markerData.name:sub(PREFIX_LEN + 1)
+    local trackNameWithoutPrefix, templateName = nameBody:match("^(.-)%-(.*)$")
     
-    -- マーカー区間内の個別字幕アイテムを取得
-    local subtitles = getSubtitlesInRange(timeline, markerData.subtitleTrackIndex, markerData.frame, markerData.frame + (markerData.duration or 1))
+    if not trackNameWithoutPrefix or not templateName then
+        logDebug("マーカー名の形式が不正です (期待: ::Track-Template): " .. markerData.name)
+        return false
+    end
+    
+    -- トラック名（プレフィックスあり）の生成
+    local targetTrackName = PREFIX .. trackNameWithoutPrefix
+    
+    -- 2. 対象トラックの検索
+    local vIdx = findTrackIndexByName(timeline, "video", targetTrackName)
+    local sIdx = findTrackIndexByName(timeline, "subtitle", targetTrackName)
+    
+    if not vIdx or not sIdx then
+        logDebug("対象トラックが見つかりません: " .. targetTrackName)
+        return false
+    end
+    
+    print("  Marker処理開始: " .. markerData.name .. " -> Track: " .. targetTrackName .. ", Template: " .. templateName)
+    
+    -- 3. 既存クリップの削除（上書き対応）
+    -- マーカーの開始位置と終了位置（絶対座標）
+    local mStartAbs = markerData.frame + timelineStart
+    local mEndAbs = mStartAbs + (markerData.duration or 1)
+    logDebug("既存クリップのクリーニング中... (Range: " .. mStartAbs .. " - " .. mEndAbs .. ")")
+    deleteClipsInRange(timeline, "video", vIdx, mStartAbs, mEndAbs)
+
+    -- 4. マーカー区間内の個別字幕アイテムを取得
+    local subtitles = getSubtitlesInRange(timeline, sIdx, markerData.frame, markerData.frame + (markerData.duration or 1))
     
     if #subtitles == 0 then
         print("    [Skip] 指定範囲に字幕が見つかりませんでした。")
         return false
     end
     
-    -- ソースクリップ（Template）を事前に検索
-    local sourceClip = findClipInMediaPool(rootFolder, clipName)
+    -- 5. ソースクリップ（Template）を事前に検索
+    local sourceClip = findClipInMediaPool(rootFolder, templateName)
     if not sourceClip then
-        print("    [Error] メディアプールにテンプレートが見つかりません: " .. clipName)
+        print("    [Error] メディアプールにテンプレートが見つかりません: " .. templateName)
         return false
     end
     
@@ -158,7 +204,7 @@ local function processMarker(projectContext, markerData)
             ["startFrame"] = 0,
             ["endFrame"] = sub.duration,
             ["recordFrame"] = sub.start, -- 字幕自体の開始フレーム（絶対座標）を使用
-            ["trackIndex"] = markerData.videoTrackIndex,
+            ["trackIndex"] = vIdx,
             ["mediaType"] = 1
         }})
         
@@ -169,7 +215,7 @@ local function processMarker(projectContext, markerData)
                 successCount = successCount + 1
             end
         else
-            logDebug("    [Error] クリップ挿入失敗: " .. sub.text:sub(1,10))
+            logDebug("    [Error] クリップ挿入失敗: " .. (sub.text:sub(1,10) or "Unknown"))
         end
     end
     
@@ -215,64 +261,53 @@ local function run()
     
     logDebug("ビデオトラック数: " .. videoTrackCount .. ", 字幕トラック数: " .. subtitleTrackCount)
 
-    if not markers then
+    if not markers or next(markers) == nil then
         print("Info: タイムライン上にマーカーが一つもありません。")
         return
     end
 
-    -- 全トラック名のリストアップ（デバッグ用）
-    logDebug("全トラックの確認:")
+    -- 全トラック名のリストアップ（重要：命名規則の確認用）
+    logDebug("現在のトラック一覧:")
     for i = 1, videoTrackCount do
-        logDebug("  Video " .. i .. ": " .. timeline:GetTrackName("video", i))
+        logDebug("  Video " .. i .. ": [" .. timeline:GetTrackName("video", i) .. "]")
     end
     for i = 1, subtitleTrackCount do
-        logDebug("  Subtitle " .. i .. ": " .. timeline:GetTrackName("subtitle", i))
+        logDebug("  Subtitle " .. i .. ": [" .. timeline:GetTrackName("subtitle", i) .. "]")
     end
 
-    -- ビデオトラックの走査
-    local trackProcessed = 0
-    for vIdx = 1, videoTrackCount do
-        local vName = timeline:GetTrackName("video", vIdx)
+    -- マーカー主導での処理
+    local markerProcessed = 0
+    local sortedFrames = {}
+    for frame, _ in pairs(markers) do
+        table.insert(sortedFrames, frame)
+    end
+    table.sort(sortedFrames)
+
+    logDebug("検出された全マーカーの確認:")
+    for _, frame in ipairs(sortedFrames) do
+        local marker = markers[frame]
+        logDebug("  Frame " .. frame .. ": Name=[" .. marker.name .. "]")
         
-        if vName:sub(1, PREFIX_LEN) == PREFIX then
-            trackProcessed = trackProcessed + 1
-            print("\nTrack Processing: " .. vName .. " (Index: " .. vIdx .. ")")
-            
-            -- 対応する字幕トラックを探す
-            local sIdx = findTrackIndexByName(timeline, "subtitle", vName)
-            
-            if not sIdx then
-                print("  Warning: 同じ名前の字幕トラック '" .. vName .. "' が見つかりません。")
-            else
-                logDebug("一致する字幕トラックを発見: Index " .. sIdx)
-                
-                -- 各マーカーを処理
-                local markerFoundOnTrack = 0
-                for frame, marker in pairs(markers) do
-                    if marker.name:sub(1, PREFIX_LEN) == PREFIX then
-                        markerFoundOnTrack = markerFoundOnTrack + 1
-                        processMarker(projectContext, {
-                            name = marker.name,
-                            frame = frame,
-                            duration = marker.duration,
-                            videoTrackIndex = vIdx,
-                            subtitleTrackIndex = sIdx
-                        })
-                    end
-                end
-                
-                if markerFoundOnTrack == 0 then
-                    logDebug("このトラックの対象となるマーカー(開始が" .. PREFIX .. ")がありません。")
-                end
+        if marker.name:sub(1, PREFIX_LEN) == PREFIX then
+            if processMarker(projectContext, {
+                name = marker.name,
+                frame = frame,
+                duration = marker.duration
+            }) then
+                markerProcessed = markerProcessed + 1
             end
         end
     end
     
-    if trackProcessed == 0 then
-        print("\n対象トラックが見つかりませんでした。命名規則(" .. PREFIX .. ")を確認してください。")
+    if markerProcessed == 0 then
+        print("\n[Guidance] 有効なマーカー(" .. PREFIX .. "で始まるもの)が処理されませんでした。")
+        print("以下の点を確認してください：")
+        print("1. マーカー名が '" .. PREFIX .. "トラック名-テンプレート名' になっていますか？ (例: " .. PREFIX .. "Main-StyleA)")
+        print("2. 対象のビデオトラックと字幕トラックの両方に '" .. PREFIX .. "' が付いていますか？ (例: " .. PREFIX .. "Main)")
+        print("3. メディアプールにテンプレートクリップ (例: StyleA) が存在しますか？")
     end
     
-    print("\nFinish: 完了しました。")
+    print("\nFinish: 完了しました。(" .. markerProcessed .. " 個のマーカーを処理しました)")
 end
 
 run()
