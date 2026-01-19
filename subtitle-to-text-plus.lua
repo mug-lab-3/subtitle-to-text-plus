@@ -228,7 +228,7 @@ end
 -- ==========================================
 
 local function run()
-    local resolve = Resolve()
+    -- local resolve = Resolve()
     local projectManager = resolve:GetProjectManager()
     local project = projectManager:GetCurrentProject()
     
