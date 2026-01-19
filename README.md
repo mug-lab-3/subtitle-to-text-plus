@@ -1,4 +1,4 @@
-# Subtitle to Text+ Professional Edition
+# Subtitle to Text+
 
 DaVinci Resolve の字幕トラックの内容を、個別の Text+ クリップに変換してビデオトラックへ自動的に配置するスクリプトです。
 
