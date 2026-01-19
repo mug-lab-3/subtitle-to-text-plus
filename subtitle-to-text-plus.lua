@@ -1,8 +1,8 @@
 --[[
     Subtitle to Text+ Professional Edition
     
-    DaVinci Resolve用の字幕からText+への変換スクリプト。
-    保守性と拡張性を重視したモジュラー構造。
+    DaVinci Resolve script to convert subtitles to Text+ clips.
+    Focuses on maintainability and modular structure.
 ]]
 
 -- ==========================================
@@ -28,7 +28,7 @@ function Logger.error(msg) print("  [ERROR] " .. msg) end
 -- ==========================================
 local MarkerParser = {}
 
--- マーカー名からトラックターゲットとテンプレート名を抽出する
+-- Extract track target and template name from marker name
 function MarkerParser.parse(markerName)
     if markerName:sub(1, #Config.PREFIX) ~= Config.PREFIX then
         return nil
@@ -38,7 +38,7 @@ function MarkerParser.parse(markerName)
     local trackTarget, templateName = body:match("^(.-)%-(.*)$")
     
     if not trackTarget or not templateName then
-        return nil -- 無効な形式
+        return nil -- Invalid format
     end
     
     return {
@@ -88,7 +88,7 @@ function ResolveClient.deleteClipsInRange(timeline, trackType, trackIndex, start
     end
     
     if #toDelete > 0 then
-        Logger.debug("  [Delete] 既存クリップを " .. #toDelete .. " 件削除します。")
+        Logger.debug("  [Delete] Removing " .. #toDelete .. " existing clips.")
         timeline:DeleteClips(toDelete)
     end
 end
@@ -104,7 +104,7 @@ function SubtitleProcessor.updateTextPlus(timelineItem, text)
     
     local tool = comp:FindTool("Template")
     if not tool then
-        -- 代替検索ロジック
+        -- Fallback search logic
         for _, t in pairs(comp:GetToolList()) do
             local attrs = t:GetAttrs()
             if attrs.TOOLS_Name == "Template" or attrs.TOOLB_Name == "TextPlus" then
@@ -151,16 +151,16 @@ end
 local App = {}
 
 function App:run()
-    -- resolve オブジェクトは環境から自動提供されることを前提とする
+    -- 'resolve' object is expected to be pre-defined in the environment
     if not resolve then
-        print("Error: resolve オブジェクトが見つかりません。DaVinci Resolve内で実行してください。")
+        print("Error: 'resolve' object not found. Please run this script within DaVinci Resolve.")
         return
     end
 
     local project = resolve:GetProjectManager():GetCurrentProject()
     local timeline = project and project:GetCurrentTimeline()
     if not timeline then
-        Logger.error("プロジェクトまたはタイムラインが開かれていません。")
+        Logger.error("Project or Timeline is not open.")
         return
     end
 
@@ -171,7 +171,7 @@ function App:run()
     Logger.info("Timeline: " .. timeline:GetName())
     
     if not markers or next(markers) == nil then
-        Logger.info("タイムライン上にマーカーがありません。")
+        Logger.info("No markers found on the timeline.")
         return
     end
 
@@ -194,7 +194,7 @@ function App:run()
         self:showGuidance()
     end
     
-    Logger.info("完了しました。(" .. markerCount .. " 個のマーカーを処理)")
+    Logger.info("Finished. (" .. markerCount .. " markers processed)")
 end
 
 function App:processMarker(timeline, mediaPool, rootFolder, frame, marker, param)
@@ -202,33 +202,33 @@ function App:processMarker(timeline, mediaPool, rootFolder, frame, marker, param
     local sIdx = ResolveClient.findTrackIndexByName(timeline, "subtitle", param.targetTrackName)
     
     if not vIdx or not sIdx then
-        Logger.error("対象トラックが見つかりません: " .. param.targetTrackName)
+        Logger.error("Target tracks not found: " .. param.targetTrackName)
         return
     end
 
-    Logger.info("Marker: " .. marker.name .. " -> Track: " .. param.targetTrackName)
+    Logger.info("Processing Marker: " .. marker.name .. " -> Track: " .. param.targetTrackName)
 
-    -- 既存クリップを削除
+    -- Remove existing clips
     local timelineStart = timeline:GetStartFrame()
     local mStartAbs = frame + timelineStart
     local mEndAbs = mStartAbs + (marker.duration or 1)
     ResolveClient.deleteClipsInRange(timeline, "video", vIdx, mStartAbs, mEndAbs)
 
-    -- 字幕取得
+    -- Get subtitles
     local subs = SubtitleProcessor.getSubtitlesInRange(timeline, sIdx, frame, frame + (marker.duration or 1))
     if #subs == 0 then
-        Logger.info("  [Skip] 指定範囲に字幕がありません。")
+        Logger.info("  [Skip] No subtitles found in the specified range.")
         return
     end
 
-    -- テンプレート取得
+    -- Get template
     local templateClip = ResolveClient.findClipInMediaPool(rootFolder, param.templateName)
     if not templateClip then
-        Logger.error("  テンプレートが見つかりません: " .. param.templateName)
+        Logger.error("  Template not found: " .. param.templateName)
         return
     end
 
-    -- 字幕ごとにText+挿入
+    -- Insert Text+ for each subtitle
     local success = 0
     for _, sub in ipairs(subs) do
         local items = mediaPool:AppendToTimeline({{
@@ -246,16 +246,16 @@ function App:processMarker(timeline, mediaPool, rootFolder, frame, marker, param
             end
         end
     end
-    Logger.info("  [Result] " .. success .. "/" .. #subs .. " 個の Text+ を配置・更新しました。")
+    Logger.info("  [Result] Successfully placed/updated " .. success .. "/" .. #subs .. " Text+ clips.")
 end
 
 function App:showGuidance()
-    Logger.info("\n[Guidance] 有効なマーカーが見つかりませんでした。")
-    Logger.info("以下の命名規則を確認してください：")
-    Logger.info("1. トラック名: '" .. Config.PREFIX .. "TrackName' (例: " .. Config.PREFIX .. "Main)")
-    Logger.info("2. マーカー名: '" .. Config.PREFIX .. "TrackName-TemplateName' (例: " .. Config.PREFIX .. "Main-StyleA)")
-    Logger.info("   ※メディアプールに 'StyleA' という名前のText+が必要です。")
+    Logger.info("\n[Guidance] No valid markers found.")
+    Logger.info("Please check the naming convention:")
+    Logger.info("1. Track Name: '" .. Config.PREFIX .. "TrackName' (e.g., " .. Config.PREFIX .. "Main)")
+    Logger.info("2. Marker Name: '" .. Config.PREFIX .. "TrackName-TemplateName' (e.g., " .. Config.PREFIX .. "Main-StyleA)")
+    Logger.info("   * Ensure 'StyleA' Text+ exists in the Media Pool.")
 end
 
--- アプリケーション実行
+-- Execution
 App:run()
